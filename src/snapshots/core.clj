@@ -28,31 +28,38 @@
   (let [n (Integer. n)]
     (drop n contents)))
 
+(defn filter-take
+  [contents n]
+  (let [n (Integer. n)]
+    (take n contents)))
+
 (defn filter-filter
   [contents identifier op val]
   (let [op-fn (get binary-ops op)]
     (filter #(op-fn (extract-value identifier %) val) contents)))
 
+(defn filter-remove
+  [contents identifier op val]
+  (let [op-fn (get binary-ops op)]
+    (remove #(op-fn (extract-value identifier %) val) contents)))
+
 (defn filter-contents
   [filter contents]
-      (println "filter: " filter )
+  (println "filter: " filter )
   (let [[cmd & args] (clojure.string/split filter #"\s+")]
-
-      (case cmd
+    (case cmd
         "drop-while" (apply filter-drop-while contents args)
         "take-while" (apply filter-take-while contents args)
         "drop" (apply filter-drop contents args)
-        "filter" (apply filter-filter contents args))))
+        "take" (apply filter-take contents args)
+        "filter" (apply filter-filter contents args)
+        "remove" (apply filter-remove contents args))))
 
 (defn history-query
-  [store-name query-id & filters]
-  (let [bucket (get @storage* store-name)
-        contents (if bucket @bucket [])]
-    (loop [filters filters
-           contents contents]
-      (if-not (or (empty? contents) (empty? filters))
-        (recur (rest filters) (filter-contents (first filters) contents))
-        contents))))
+  [stream & filters]
+  (if-not (or (empty? contents) (empty? filters))
+    (recur (filter-contents (first filters) contents) (rest filters))
+    contents))
 
 (defn- history-store
   [storage*  store-name event-path & args]
@@ -63,15 +70,11 @@
          (swap! bucket* conj event-info)
          (alter storage* assoc store-name (atom [event-info])))))))
 
-(defn- history-clear
-  [storage* store-name]
-  (dosync
-   (alter storage* dissoc store-name)))
-
 (defn- handle-query
-  [& args]
-  (let [events (apply history-query args)]
-    (pprint events)))
+  [storage* query-id store-name host-name port & args]
+  (when-let [stream (get @storage* store-name)]
+    (let [events (apply history-query stream args)]
+      (pprint events))))
 
 (defn- handle-fetch
   [& args]
@@ -86,21 +89,18 @@
 (defn mk-snapshots-server
   [port]
   (let [server (osc/osc-server port)
-        storage* (ref {})])
+        storage* (ref {})]
 
-  (osc-handle server "/store"
-              (fn [{[store-name event-path & args] :args}]
-                (apply history-store storage* store-name event-path args)))
-  (osc-handle server "/clear"
-              (fn [{[store-name] :args}]
-                (history-clear storage* store-name)))
-  (osc-handle server "/query"
-              (fn [{[store-name query-id & args] :args}]
-                (apply handle-query store-name query-id args)))
-  (osc-handle server "/fetch"
-              (fn [{[store-name query-id & args] :args}]
-                (apply handle-fetch store-name query-id args)))
-  (osc-handle server "/snapshot"
-              (fn [{[store-name query-id & args] :args}]
-                (apply handle-snapshot store-name query-id args)))
-  (snapshots-server server storage*))
+    (osc-handle server "/store"
+                (fn [{[store-name event-path & args] :args}]
+                  (apply history-store storage* store-name event-path args)))
+    (osc-handle server "/query"
+                (fn [{[query-id store-name host-name port & args] :args}]
+                  (apply handle-query storage* query-id store-name host-name port args)))
+    (osc-handle server "/fetch"
+                (fn [{[store-name query-id & args] :args}]
+                  (apply handle-fetch storage* store-name query-id args)))
+    (osc-handle server "/snapshot"
+                (fn [{[store-name query-id & args] :args}]
+                  (apply handle-snapshot storage* store-name query-id args)))
+    (snapshots-server server storage*)))
