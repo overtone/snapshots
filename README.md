@@ -25,7 +25,7 @@
     MMMMMMMMMMM                   88
                                   88
                                   88
-# Queryable OSC History
+# Snapshots: Queryable OSC History
 
 Snapshots is a stand-alone OSC server which will store OSC and allow the retrieval of OSC messages. Snaphosts provides a stream metaphor where each incoming OSC message is associated with a specific stream. Streams may then be retrieved (again via OSC) filtered and retrieved and also "frozen".
 
